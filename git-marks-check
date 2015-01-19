@@ -1,0 +1,96 @@
+#!/usr/bin/env ruby
+
+require 'json'
+
+$fix = false
+$verbose = false
+$git_marks = {}
+$r_marks = {}
+$mode = 'hg'
+
+# Parse arguments
+ARGV.delete_if do |cur|
+  next false if cur[0] != '-'
+  case cur
+  when /^-f$/, /^--fix$/
+    $fix = true
+    true
+  when /^-v$/, /^--verbose$/
+    $verbose = true
+    true
+  when /^-m(.+)$/, /^--mode=(.+)$/
+    $mode = $1
+    true
+  end
+end
+
+$remote = ARGV[0]
+
+$dir = File.join('.git', $mode, $remote)
+$git_file = File.join($dir, 'marks-git')
+$r_file = File.join($dir, 'marks-' + $mode)
+
+# TODO
+$r_file = File.join($dir, 'marks-int') if $mode == 'bzr'
+
+# Get git marks
+File.open($git_file).each do |l|
+  if l =~ /:(\d+) (\h+)$/
+    $git_marks[$1.to_i] = $2
+  end
+end
+
+# Remove non commit objects
+File.popen(%w[git cat-file --batch-check], 'r+') do |p|
+  $git_marks.each do |mark,id|
+    p.write(id + "\n")
+    if p.readline =~ /(\h+) (\w+) (\d+)/
+      type = $2
+      $git_marks.delete(mark) unless type == 'commit'
+    end
+  end
+end
+
+# Remove notes
+File.popen(%W[git rev-list refs/notes/#{$mode}], 'r', :err => File::NULL) do |p|
+  p.each do |l|
+    $git_marks.delete_if { |mark,id| id == l.chomp }
+  end
+end
+
+# Get remote marks
+r_data = JSON.parse(File.read($r_file))
+$r_marks = r_data['marks'].invert
+
+r_missing = $git_marks.reject { |mark,id| $r_marks[mark] }
+git_missing = $r_marks.reject { |mark,id| $git_marks[mark] }
+
+if $verbose
+  r_missing.each do |mark,id|
+    puts "Missing %s (%d) from #{$mode}" % [id, mark]
+  end
+  git_missing.each do |mark,id|
+    puts "Missing %s (%d) from git" % [id, mark]
+  end
+end
+
+if $fix
+  # Fix remote marks
+  r_data['marks'].delete_if { |mark,id| git_missing.has_key?(id) }
+  File.write($r_file, r_data.to_json)
+
+  # Fix git marks
+  File.open($git_file, 'w') do |f|
+    $git_marks.each do |mark,id|
+      next if r_missing.has_key?(mark)
+      f.puts ':%d %s' % [mark, id]
+    end
+  end
+end
+
+if r_missing.empty? and git_missing.empty?
+  puts 'Everything OK'
+else
+  puts 'Issues detected'
+  exit 1
+end

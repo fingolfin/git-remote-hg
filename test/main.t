@@ -11,18 +11,6 @@ test_description='Test remote-hg'
 test -n "$TEST_DIRECTORY" || TEST_DIRECTORY=$(dirname $0)/
 . "$TEST_DIRECTORY"/test-lib.sh
 
-if ! test_have_prereq PYTHON
-then
-	skip_all='skipping remote-hg tests; python not available'
-	test_done
-fi
-
-if ! python2 -c 'import mercurial' > /dev/null 2>&1
-then
-	skip_all='skipping remote-hg tests; mercurial not available'
-	test_done
-fi
-
 check () {
 	echo $3 > expected &&
 	git --git-dir=$1/.git log --format='%s' -1 $2 > actual &&
@@ -692,7 +680,7 @@ test_expect_success 'remote big push fetch first' '
 	)
 '
 
-test_expect_failure 'remote big push force' '
+test_expect_success GIT_2_0 'remote big push force' '
 	test_when_finished "rm -rf hgrepo gitrepo*" &&
 
 	setup_big_push
@@ -722,7 +710,7 @@ test_expect_failure 'remote big push force' '
 	check_bookmark hgrepo new_bmark six
 '
 
-test_expect_failure 'remote big push dry-run' '
+test_expect_success GIT_2_0 'remote big push dry-run' '
 	test_when_finished "rm -rf hgrepo gitrepo*" &&
 
 	setup_big_push

@@ -6,10 +6,17 @@ repositories as if they were Git ones:
 git clone "hg::http://selenic.com/repo/hello"
 --------------------------------------
 
-To enable this, simply add the 'git-remote-hg' script anywhere in your `$PATH`:
+To enable this (e.g. under Linux), simply add the 'git-remote-hg' script anywhere in your `$PATH`:
 
 --------------------------------------
-wget https://raw.githubusercontent.com/felipec/git-remote-hg/master/git-remote-hg -O ~/bin/git-remote-hg
+wget https://raw.github.com/fingolfin/git-remote-hg/master/git-remote-hg -O ~/bin/git-remote-hg
+chmod +x ~/bin/git-remote-hg
+--------------------------------------
+
+If your system does not have wget, but curl (like Mac OS X 10.9), add the 'git-remote-hg' script anywhere in your `$PATH`:
+
+--------------------------------------
+curl -o ~/bin/git-remote-hg http://raw.githubusercontent.com/fingolfin/git-remote-hg/master/git-remote-hg
 chmod +x ~/bin/git-remote-hg
 --------------------------------------
 

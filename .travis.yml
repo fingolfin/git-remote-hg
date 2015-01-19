@@ -5,10 +5,19 @@ install:
     then pip install -q Mercurial${HG_VERSION+==$HG_VERSION};
     else pip install -q http://selenic.com/repo/hg/archive/tip.tar.gz;
     fi
-  - pip install -q dulwich hg-git || true
+  - if [ "$HG_GIT_VERSION" != "dev" ];
+    then pip install -q dulwich${HG_GIT_VERSION+==$HG_GIT_VERSION};
+    else pip install -q https://bitbucket.org/durin42/hg-git/get/tip.tar.bz2;
+    fi
+  - if [ -n "$USE_LATEST_GIT" ]; then
+        sudo add-apt-repository -y ppa:pdoes/ppa;
+        sudo apt-get update;
+        sudo apt-get install -qq git;
+    fi
 
 before_script:
-  - hg --version || true
+  - git --version
+  - hg --version
   - pip show hg-git dulwich
 
 script:
@@ -16,10 +25,23 @@ script:
 
 matrix:
   include:
-    - env: HG_VERSION=2.9.1
-    - env: HG_VERSION=2.8.2
     - env: HG_VERSION=2.7.2
-    - env: HG_VERSION=3.0
-    - env: HG_VERSION=dev
+    - env: HG_VERSION=2.8.2
+    - env: HG_VERSION=2.9.1
+    - env: HG_VERSION=3.0.1
+    - env: HG_VERSION=3.1.2
+    - env: HG_VERSION=3.2.4
+
+    - env: HG_VERSION=2.7.2 USE_LATEST_GIT=
+    - env: HG_VERSION=2.8.2 USE_LATEST_GIT=
+    - env: HG_VERSION=2.9.1 USE_LATEST_GIT=
+    - env: HG_VERSION=3.0.1 USE_LATEST_GIT=
+    - env: HG_VERSION=3.1.2 USE_LATEST_GIT=
+    - env: HG_VERSION=3.2.4 USE_LATEST_GIT=
+
+    # FIXME: hg 3.3 requires hg-git > 0.7.0, but we are incompatible with that.
+    # See issue felipec/git-remote-hg#35
+    #- env: HG_VERSION=dev HG_GIT_VERSION=dev
+
     - python: 2.7
     - python: 2.6
