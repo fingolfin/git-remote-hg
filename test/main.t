@@ -319,9 +319,6 @@ test_expect_success 'remote push from master branch' '
 	check_branch hgrepo default one
 '
 
-GIT_REMOTE_HG_TEST_REMOTE=1
-export GIT_REMOTE_HG_TEST_REMOTE
-
 test_expect_success 'remote cloning' '
 	test_when_finished "rm -rf gitrepo*" &&
 
