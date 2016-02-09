@@ -128,9 +128,11 @@ def hgbin(n):
     return node.bin(n)
 
 def hgref(ref):
+    ref = re.sub('_\._$', '.', ref)
     return ref.replace('___', ' ')
 
 def gitref(ref):
+    ref = re.sub('\.$', '_._', ref)
     return ref.replace(' ', '___')
 
 def check_version(*check):
