@@ -16,6 +16,9 @@ from mercurial import hg, ui, bookmarks, context, encoding
 from mercurial import node, error, extensions, discovery, util
 from mercurial import changegroup
 
+from mercurial.url import passwordmgr
+from mercurial import httpconnection
+
 import re
 import sys
 import os
@@ -27,6 +30,7 @@ except ImportError:
 import shutil
 import subprocess
 import urllib
+import urllib2
 import atexit
 import urlparse
 import hashlib
@@ -80,6 +84,9 @@ def die(msg, *args):
 
 def warn(msg, *args):
     sys.stderr.write('WARNING: %s\n' % (msg % args))
+
+def debug(msg, *args):
+    sys.stderr.write('DEBUG: %s\n' % (msg % args))
 
 # convert between git timezone and mercurial timezone data.
 # git stores timezone as a string in the form "+HHMM" or "-HHMM".
@@ -152,6 +159,94 @@ def get_config_bool(config, default=False):
         return False
     else:
         return default
+
+# The following is copied from mercurial_keyring
+def monkeypatch_method(cls,fname=None):
+    def decorator(func):
+        local_fname = fname
+        if local_fname is None:
+            local_fname = func.__name__
+        setattr(func, "orig", getattr(cls, local_fname, None))
+        setattr(cls, local_fname, func)
+        return func
+    return decorator
+
+class HTTPPasswordHandler(object):
+    def find_auth(self, pwmgr, realm, authuri):
+        debug("find_auth(realm=%s, authuri=%s)" % (realm, authuri))
+
+        # TODO: detect retries (see "after_bad_auth" in mecurial_keyring),
+        # and in that case ... ? abort? use "git credential reject"?
+        # (but that may not be what the user wants)
+        # Or somehow force / coerce "git credential fill" to ask interactively
+        # (and not use e.g. OS X keychain helper)?
+
+        # TODO: but note that hg itself is buggy in that regard, and does not
+        # actually ask the user again for a password once it has been entered!
+        # I.e. with and w/o mercurial_keyring installed, we get rather
+        # different behaviour. See
+        # http://bz.selenic.com/show_bug.cgi?id=3210
+
+        # TODO: also use "git credential approve" and "reject"...
+
+        authinfo = urllib2.HTTPPasswordMgrWithDefaultRealm.find_user_password(
+            pwmgr, realm, authuri)
+        user, passwd = authinfo
+        if user and passwd:
+            return (user, passwd)
+
+        res = httpconnection.readauthforuri(pwmgr.ui, authuri, user)
+        if res:
+            group, auth = res
+            user, passwd = auth.get('username'), auth.get('password')
+            debug("using auth.%s.* for authentication\n" % group)
+
+        parsed_url = urlparse.urlparse(authuri)
+        if parsed_url.username and not user:
+            user = parsed_url.username
+
+        if parsed_url.password and not passwd:
+            passwd = parsed_url.password
+
+        if not user or not passwd:
+            debug("invoking git-credential...")
+            input  = "protocol=%s\n" % parsed_url.scheme
+            input += "host=%s\n" % parsed_url.netloc
+            input += "path=%s\n" % parsed_url.path
+            if user:
+                input += "username=%s\n" % user
+            cmd = ['git', 'credential', 'fill']
+            process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            output, _ = process.communicate(input)
+
+            if process.returncode != 0:
+                raise util.Abort('git-remote-hg: http auth required, git-credential aborted')
+
+            kv = dict(re.findall(r'([^\n=]+)=([^\n]+)', output))
+            user = kv['username']
+            passwd = kv['password']
+
+        if not user:
+            raise util.Abort('git-remote-hg: http auth required but could not find username')
+
+        if not passwd:
+            raise util.Abort('git-remote-hg: http auth required but could not find password')
+
+        debug("Keyring password found, URL %s: user %s, passwd %s",
+              authuri, user, passwd and '*' * len(passwd) or 'not set')
+        pwmgr.add_password(realm, authuri, user, passwd)
+        return (user, passwd)
+
+
+############################################################
+
+@monkeypatch_method(passwordmgr)
+def find_user_password(self, realm, authuri):
+    # Extend object attributes
+    if not hasattr(self, '_git_remote_hg_pwd_handler'):
+        self._git_remote_hg_pwd_handler = HTTPPasswordHandler()
+
+    return self._git_remote_hg_pwd_handler.find_auth(self, realm, authuri)
 
 # Handle loading and storing git marks files
 class Marks:
@@ -438,6 +533,7 @@ def get_repo(url, alias):
 
     myui = ui.ui()
     myui.setconfig('ui', 'interactive', 'off')
+    myui.setconfig('extensions', 'mercurial_keyring', '!')  # disable mercurial_keyring
     myui.fout = sys.stderr
 
     if get_config_bool('remote-hg.insecure'):
