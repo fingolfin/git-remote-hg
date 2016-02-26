@@ -445,51 +445,46 @@ def get_repo(url, alias):
 
     extensions.loadall(myui)
 
-    if hg.islocal(url) and not os.environ.get('GIT_REMOTE_HG_TEST_REMOTE'):
-        repo = hg.repository(myui, url)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
+    shared_path = os.path.join(gitdir, 'hg')
+
+    # check and upgrade old organization
+    hg_path = os.path.join(shared_path, '.hg')
+    if os.path.exists(shared_path) and not os.path.exists(hg_path):
+        repos = os.listdir(shared_path)
+        for x in repos:
+            local_hg = os.path.join(shared_path, x, 'clone', '.hg')
+            if not os.path.exists(local_hg):
+                continue
+            if not os.path.exists(hg_path):
+                shutil.move(local_hg, hg_path)
+            shutil.rmtree(os.path.join(shared_path, x, 'clone'))
+
+    # setup shared repo (if not there)
+    try:
+        hg.peer(myui, {}, shared_path, create=True)
+    except error.RepoError:
+        pass
+
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+    local_path = os.path.join(dirname, 'clone')
+    if not os.path.exists(local_path):
+        hg.share(myui, shared_path, local_path, update=False)
     else:
-        shared_path = os.path.join(gitdir, 'hg')
+        # make sure the shared path is always up-to-date
+        util.writefile(os.path.join(local_path, '.hg', 'sharedpath'), hg_path)
 
-        # check and upgrade old organization
-        hg_path = os.path.join(shared_path, '.hg')
-        if os.path.exists(shared_path) and not os.path.exists(hg_path):
-            repos = os.listdir(shared_path)
-            for x in repos:
-                local_hg = os.path.join(shared_path, x, 'clone', '.hg')
-                if not os.path.exists(local_hg):
-                    continue
-                if not os.path.exists(hg_path):
-                    shutil.move(local_hg, hg_path)
-                shutil.rmtree(os.path.join(shared_path, x, 'clone'))
+    repo = hg.repository(myui, local_path)
+    peer = hg.peer(repo.ui, {}, url)
 
-        # setup shared repo (if not there)
-        try:
-            hg.peer(myui, {}, shared_path, create=True)
-        except error.RepoError:
-            pass
+    if check_version(3, 2):
+        from mercurial import exchange
+        exchange.pull(repo, peer, heads=None, force=True)
+    else:
+        repo.pull(peer, heads=None, force=True)
 
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        local_path = os.path.join(dirname, 'clone')
-        if not os.path.exists(local_path):
-            hg.share(myui, shared_path, local_path, update=False)
-        else:
-            # make sure the shared path is always up-to-date
-            util.writefile(os.path.join(local_path, '.hg', 'sharedpath'), hg_path)
-
-        repo = hg.repository(myui, local_path)
-        peer = hg.peer(repo.ui, {}, url)
-
-        if check_version(3, 2):
-            from mercurial import exchange
-            exchange.pull(repo, peer, heads=None, force=True)
-        else:
-            repo.pull(peer, heads=None, force=True)
-
-        updatebookmarks(repo, peer)
+    updatebookmarks(repo, peer)
 
     return repo
 
