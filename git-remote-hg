@@ -40,6 +40,9 @@ import time as ptime
 # named branches:
 # git config --global remote-hg.track-branches false
 #
+# If you want to disable import of specific branches:
+# git config --global remote-hg.ignore-branch <branch>
+#
 # If you want the equivalent of hg's clone/pull--insecure option:
 # git config --global remote-hg.insecure true
 #
@@ -152,6 +155,12 @@ def get_config_bool(config, default=False):
         return False
     else:
         return default
+
+def get_config_list(config):
+    cmd = ['git', 'config', '--get-all', config]
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    output, _ = process.communicate()
+    return output.split('\n')
 
 # Handle loading and storing git marks files
 class Marks:
@@ -751,7 +760,8 @@ def do_list(parser):
 
     if track_branches:
         for branch in branches:
-            print "? refs/heads/branches/%s" % gitref(branch)
+            if branch not in ignore_branches:
+                print "? refs/heads/branches/%s" % gitref(branch)
 
     for bmark in bmarks:
         if bmarks[bmark].hex() == '0' * 40:
@@ -1321,7 +1331,7 @@ def main(args):
     global prefix, gitdir, dirname, branches, bmarks
     global marks, blob_marks, parsed_refs
     global peer, mode, bad_mail, bad_name
-    global track_branches, force_push, is_tmp
+    global track_branches, ignore_branches, force_push, is_tmp
     global parsed_tags
     global filenodes
     global fake_bmark, hg_version
@@ -1344,6 +1354,8 @@ def main(args):
 
     hg_git_compat = get_config_bool('remote-hg.hg-git-compat')
     track_branches = get_config_bool('remote-hg.track-branches', True)
+    if( track_branches ):
+        ignore_branches = get_config_list('remote-hg.ignore-branch')
     force_push = False
 
     if hg_git_compat:
